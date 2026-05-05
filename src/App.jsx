@@ -5,6 +5,7 @@ const actions = ["OPEN", "JAM", "3-BET", "3-BET JAM", "CALL", "FOLD"];
 const strategyModes = ["Live Exploit", "Balanced"];
 const difficultyModes = ["Standard", "Tough Spots", "Leak Finder"];
 const drillModes = ["Normal", "Speed"];
+const rebuyModes = ["Early Rebuy", "Mid Rebuy", "Late Rebuy", "Post-Rebuy"];
 
 const levels = [
   { level: 1, sb: 100, bb: 200, stage: "Early" },
@@ -113,12 +114,25 @@ function stackBBFor(stage, label, seed) {
   if (label === "Average") return Math.round(12 + rand(seed) * 9);
   return Math.round(22 + rand(seed) * 28);
 }
-function makeTable(level, heroPos, seed) {
+function rebuyIntensity(rebuyMode) {
+  if (rebuyMode === "Early Rebuy") return 2;
+  if (rebuyMode === "Mid Rebuy") return 1;
+  if (rebuyMode === "Late Rebuy") return 1;
+  return 0;
+}
+function playerPoolForRebuy(rebuyMode) {
+  if (rebuyMode === "Early Rebuy") return ["loose", "loose", "aggressive", "passive", "passive", "unknown"];
+  if (rebuyMode === "Mid Rebuy") return ["loose", "aggressive", "passive", "tight", "unknown"];
+  if (rebuyMode === "Late Rebuy") return ["tight", "tight", "aggressive", "unknown", "passive"];
+  return playerTypes;
+}
+function makeTable(level, heroPos, seed, rebuyMode = "Post-Rebuy") {
   const table = {};
+  const pool = playerPoolForRebuy(rebuyMode);
   positions.forEach((pos, idx) => {
     const label = pick(stackLabels, seed + idx * 97, "Average");
     const bb = stackBBFor(level.stage, label, seed + idx * 101);
-    table[pos] = { pos, label: stackClass(bb), bb, chips: bb * level.bb, type: pos === heroPos ? "hero" : pick(playerTypes, seed + idx * 103, "unknown") };
+    table[pos] = { pos, label: stackClass(bb), bb, chips: bb * level.bb, type: pos === heroPos ? "hero" : pick(pool, seed + idx * 103, "unknown") };
   });
   return table;
 }
@@ -165,19 +179,24 @@ function limpJamThreshold(pos, bb, limpCount, mode) {
   return 999;
 }
 
-function generateScenario(i, difficulty = "Standard") {
+function generateScenario(i, difficulty = "Standard", rebuyMode = "Post-Rebuy") {
   const level = pick(levels, i * 11 + 3, levels[0]);
   const heroPos = pick(positions, i * 17 + 7, "MP");
   const handPool = difficulty === "Tough Spots" || difficulty === "Leak Finder" ? toughHands : allHands;
   const hand = pick(handPool, i * 19 + 9, "AJo");
-  const table = makeTable(level, heroPos, i * 29 + 13);
+  const table = makeTable(level, heroPos, i * 29 + 13, rebuyMode);
   const hero = table[heroPos];
   const r = rand(i * 31 + 15);
   let prior = "Folded to you";
   let villainPos = null;
   let villain = null;
   let limpers = [];
-  const limpChance = difficulty === "Tough Spots" || difficulty === "Leak Finder" ? 0.3 : 0.22;
+  const baseLimp = difficulty === "Tough Spots" || difficulty === "Leak Finder" ? 0.3 : 0.22;
+  let limpModifier = 0;
+  if (rebuyMode === "Early Rebuy") limpModifier = 0.12;
+  if (rebuyMode === "Mid Rebuy") limpModifier = 0.06;
+  if (rebuyMode === "Late Rebuy") limpModifier = 0.02;
+  const limpChance = baseLimp + limpModifier;
 
   if (heroPos === "BB") {
     villainPos = pick(["CO", "BTN", "SB"], i * 37 + 17, "BTN");
@@ -208,7 +227,7 @@ function generateScenario(i, difficulty = "Standard") {
   return { id: i, level, heroPos, hand, table, hero, prior, villain, villainPos, limpers };
 }
 
-function solve(s, mode = "Live Exploit") {
+function solve(s, mode = "Live Exploit", rebuyMode = "Post-Rebuy") {
   const bb = s.hero ? s.hero.bb : 0;
   const score = handScore(s.hand);
   const bucket = bucketOf(s.hand);
@@ -231,10 +250,25 @@ function solve(s, mode = "Live Exploit") {
   const openTooBig = openSize >= 3;
   const openTiny = openSize <= 2.0;
   const liveFacingAdj = playerAdjustmentFacingOpen(villain ? villain.type : null, mode);
+  const rebuyActive = rebuyMode !== "Post-Rebuy";
+  let bluffPenalty = 0;
+  let valueDiscount = 0;
+  if (rebuyMode === "Early Rebuy") {
+    bluffPenalty = 10;
+    valueDiscount = 6;
+  }
+  if (rebuyMode === "Mid Rebuy") {
+    bluffPenalty = 6;
+    valueDiscount = 3;
+  }
+  if (rebuyMode === "Late Rebuy") {
+    bluffPenalty = 8;
+    valueDiscount = 2;
+  }
 
   if (!facingOpen && !facingLimp && bb <= 7) {
     const threshold = isEarly(p) ? 45 : p === "LJ" || p === "HJ" ? 36 : p === "CO" ? 28 : p === "BTN" ? 20 : 15;
-    if (score >= threshold) return ["JAM", `Level ${s.level.level}, ${bb}BB: emergency stack. The BB ante makes the pot too valuable. From ${p}, ${s.hand} should jam.`];
+    if (score >= threshold + Math.floor(bluffPenalty / 2)) return ["JAM", `Level ${s.level.level}, ${bb}BB: emergency stack. The BB ante makes the pot too valuable. From ${p}, ${s.hand} should jam.${rebuyActive ? " Rebuy mode trims marginal jams because calls are wider." : ""}`];
     return ["FOLD", `Level ${s.level.level}, ${bb}BB: emergency stack, but ${s.hand} is still too weak from ${p}.`];
   }
 
@@ -243,9 +277,9 @@ function solve(s, mode = "Live Exploit") {
     const isoSize = isoRaiseSize(limpCount);
     const jamThreshold = limpJamThreshold(p, bb, limpCount, mode);
     const openThreshold = isoOpenThreshold(p, bb, limpCount, mode);
-    if (bb <= 25 && score >= jamThreshold) return ["JAM", `At ${bb}BB over ${limpCount} limper(s), jam and punish dead money. Live Day 1 limpers overfold and call off poorly.`];
+    if (bb <= 25 && score >= jamThreshold + bluffPenalty) return ["JAM", `At ${bb}BB over ${limpCount} limper(s), jam only with stronger value in rebuy mode. Dead money is good, but callers gamble wider when rebuys remain.`];
     if (bb <= 15) return ["FOLD", `At ${bb}BB over limpers, avoid passive calls. ${s.hand} is not strong enough to jam from ${p}.`];
-    if (score >= openThreshold) return ["OPEN", `Iso-raise over ${limpCount} limper(s). Suggested size: about ${isoSize}. From ${p} at ${bb}BB, ${s.hand} is strong enough to isolate rather than overlimp.`];
+    if (score >= openThreshold - valueDiscount) return ["OPEN", `Iso-raise over ${limpCount} limper(s). Suggested size: about ${isoSize}. From ${p} at ${bb}BB, ${s.hand} is strong enough to isolate rather than overlimp.${rebuyActive ? " Rebuy mode favors value isolation because loose players call too wide." : ""}`];
     return ["FOLD", `Facing ${limpCount} limper(s), ${s.hand} is not strong enough to iso from ${p}. Do not overlimp weak hands in this fast structure.`];
   }
 
@@ -254,10 +288,10 @@ function solve(s, mode = "Live Exploit") {
     const bbType = bbPlayer ? bbPlayer.type : "unknown";
     const bbExploit = mode === "Live Exploit" && ["tight", "passive"].includes(bbType) ? -6 : mode === "Live Exploit" && ["loose", "aggressive"].includes(bbType) ? 4 : 0;
     if (bb <= 20) {
-      if (score >= 28 + bbExploit) return ["JAM", `SB vs BB at ${bb}BB: jam wide. BB has ${bbPlayer ? bbPlayer.bb : "?"}BB and is ${bbType}; deny equity and use fold equity.`];
+      if (score >= 28 + bbExploit + bluffPenalty) return ["JAM", `SB vs BB at ${bb}BB: jam, but rebuy mode removes the thinnest bluff jams. BB has ${bbPlayer ? bbPlayer.bb : "?"}BB and is ${bbType}.`];
       return ["FOLD", `Too weak even for SB jam range at ${bb}BB.`];
     }
-    if (score >= 25 + bbExploit) return ["OPEN", "Folded to SB. Open wide to 2.5x-3x, especially if BB is tight/passive."];
+    if (score >= 25 + bbExploit + Math.floor(bluffPenalty / 2)) return ["OPEN", "Folded to SB. Open wide, but trim the weakest steals while rebuys remain because BB calls/plays back wider."];
     return ["FOLD", "Weak hand; okay to give up from SB despite only one player behind."];
   }
 
@@ -278,8 +312,8 @@ function solve(s, mode = "Live Exploit") {
 
     if (bb <= 30) {
       const primeResteal = lateVillain && (bucket === "blocker" || ["55", "66", "77", "88", "99", "ATo", "AQo", "KQs"].includes(s.hand) || score >= 68);
-      if (primeResteal && score >= 45 + adjustment) return ["3-BET JAM", `Prime resteal: ${bb}BB vs ${villainPos} open (${villain ? villain.bb : "?"}BB). Blockers/pairs/broadways perform well as jams.`];
-      if (!lateVillain && score >= 85 + adjustment) return ["3-BET JAM", `Against earlier opens, keep 3-bet jams value-heavy. ${s.hand} qualifies.`];
+      if (primeResteal && score >= 45 + adjustment + bluffPenalty) return ["3-BET JAM", `Prime resteal: ${bb}BB vs ${villainPos} open (${villain ? villain.bb : "?"}BB). In rebuy mode, this must be more value-heavy because opener calls wider.`];
+      if (!lateVillain && score >= 85 + adjustment - valueDiscount) return ["3-BET JAM", `Against earlier opens, keep 3-bet jams value-heavy. ${s.hand} qualifies.`];
       return ["FOLD", `Avoid flats at ${bb}BB. Not enough to 3-bet jam profitably versus ${villainPos}'s open.`];
     }
 
@@ -307,28 +341,28 @@ function solve(s, mode = "Live Exploit") {
 
   if (bb <= 25) {
     const openerPenalty = (shortBehind >= 2 ? 4 : 0) + (bigBehind >= 1 ? 4 : 0) + (mode === "Live Exploit" ? Math.max(0, looseAggroBehind - tightPassiveBehind) * 2 : 0);
-    if (isLate(p) && ["blocker", "speculative", "weakSteal"].includes(bucket) && score >= 36 + openerPenalty) return ["JAM", `Late position at ${bb}BB: this hand plays well as an open-jam, especially with reshove stacks behind.`];
+    if (isLate(p) && ["blocker", "speculative", "weakSteal"].includes(bucket) && score >= 36 + openerPenalty + bluffPenalty) return ["JAM", `Late position at ${bb}BB: this hand plays well as an open-jam, but rebuy mode requires more strength because calls are wider.`];
     const openThreshold = (isEarly(p) ? 68 : isLate(p) ? 42 : 52) + openerPenalty;
-    if (score >= openThreshold) return ["OPEN", `Open 2.0x. Strong enough to raise; not mandatory to open-jam from ${p}.`];
+    if (score >= openThreshold - valueDiscount) return ["OPEN", `Open 2.0x. Strong enough to raise; not mandatory to open-jam from ${p}.${rebuyActive ? " Rebuy mode rewards value opens because players defend too wide." : ""}`];
     return ["FOLD", `Fold. Not enough hand strength/fold equity from ${p} with these stacks behind.`];
   }
 
   if (bb <= 40) {
-    const threshold = (isEarly(p) ? 68 : isLate(p) ? 36 : 50) + (mode === "Live Exploit" && isLate(p) ? -Math.min(6, tightPassiveBehind * 2) : 0);
+    const threshold = (isEarly(p) ? 68 : isLate(p) ? 36 : 50) + (mode === "Live Exploit" && isLate(p) ? -Math.min(6, tightPassiveBehind * 2) : 0) + Math.floor(bluffPenalty / 2) - valueDiscount;
     if (score >= threshold) return ["OPEN", `Open 2.0x-2.2x. You have ${bb}BB; pressure matters, but open-jamming this depth is usually unnecessary.`];
     return ["FOLD", `Below opening range for ${p}.`];
   }
 
-  const threshold = (isEarly(p) ? 68 : isLate(p) ? 30 : 45) + (mode === "Live Exploit" && isLate(p) ? -Math.min(8, tightPassiveBehind * 2) : 0);
+  const threshold = (isEarly(p) ? 68 : isLate(p) ? 30 : 45) + (mode === "Live Exploit" && isLate(p) ? -Math.min(8, tightPassiveBehind * 2) : 0) + Math.floor(bluffPenalty / 2) - valueDiscount;
   if (score >= threshold) return ["OPEN", "Open 2.2x. Early levels: build pots with playable hands. If table is loose/passive and hand is value-heavy, 2.5x is fine."];
   return ["FOLD", `Too loose for ${p} this deep. Preserve chips and attack better spots.`];
 }
 
-function generateRandomScenario(stageMode = "all", difficulty = "Standard", seen = new Set()) {
+function generateRandomScenario(stageMode = "all", difficulty = "Standard", seen = new Set(), rebuyMode = "Post-Rebuy") {
   let guard = 0;
   while (guard < 1000) {
     const seed = randomSeed();
-    const scenario = generateScenario(seed, difficulty);
+    const scenario = generateScenario(seed, difficulty, rebuyMode);
     const key = `${scenario.level.level}-${scenario.heroPos}-${scenario.hand}-${scenario.hero.bb}-${scenario.prior}`;
     if ((stageMode === "all" || scenario.level.stage === stageMode) && !seen.has(key)) {
       seen.add(key);
@@ -337,7 +371,7 @@ function generateRandomScenario(stageMode = "all", difficulty = "Standard", seen
     guard++;
   }
   seen.clear();
-  const scenario = generateScenario(randomSeed(), difficulty);
+  const scenario = generateScenario(randomSeed(), difficulty, rebuyMode);
   seen.add(`${scenario.level.level}-${scenario.heroPos}-${scenario.hand}-${scenario.hero.bb}-${scenario.prior}`);
   return scenario;
 }
@@ -391,7 +425,7 @@ function getRangeView(s, answer) {
     villain: "Players behind: defend tighter if tight/passive, reshove more if short/aggressive",
   };
 }
-function getEVExplanation(s, answer) {
+function getEVExplanation(s, answer, rebuyMode = "Post-Rebuy") {
   const effective = getEffectiveBB(s);
   const warnings = getWarnings(s);
   const lines = [];
@@ -407,6 +441,7 @@ function getEVExplanation(s, answer) {
   } else {
     lines.push("Folding avoids dominated-hand and reverse-implied-odds problems.");
   }
+  if (rebuyIntensity(rebuyMode) > 0) lines.push(`${rebuyMode}: opponents call wider, so bluff fold-equity is lower and value becomes more important.`);
   if (warnings.length) lines.push(`Warning factors: ${warnings.join(", ")}.`);
   return lines;
 }
@@ -432,6 +467,7 @@ export default function App() {
   const [strategyMode, setStrategyMode] = useState("Live Exploit");
   const [difficultyMode, setDifficultyMode] = useState("Standard");
   const [drillMode, setDrillMode] = useState("Normal");
+  const [rebuyMode, setRebuyMode] = useState("Early Rebuy");
   const [scenario, setScenario] = useState(() => generateRandomScenario("all", "Standard", new Set()));
   const [answered, setAnswered] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -444,12 +480,12 @@ export default function App() {
   const [showStacks, setShowStacks] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
-  const [answer, explanation] = solve(scenario, strategyMode);
+  const [answer, explanation] = solve(scenario, strategyMode, rebuyMode);
   const legalActions = useMemo(() => legalActionsForScenario(scenario), [scenario]);
   const accuracy = attempted === 0 ? 0 : Math.round((correct / attempted) * 100);
   const warnings = getWarnings(scenario);
   const rangeView = getRangeView(scenario, answer);
-  const evLines = getEVExplanation(scenario, answer);
+  const evLines = getEVExplanation(scenario, answer, rebuyMode);
   const potBefore = scenario.level.sb + scenario.level.bb + scenario.level.bb;
   const effectiveBB = getEffectiveBB(scenario);
   const behindList = playersBehind(scenario.heroPos).map((p) => scenario.table[p]).filter(Boolean);
@@ -482,7 +518,7 @@ export default function App() {
     setHistory((prev) => [{ scenario, selected: action, answer, correct: action === answer, mistake: mistakeLabel(action, answer, scenario) }, ...prev].slice(0, 10));
   }
   function next() {
-    setScenario(generateRandomScenario(stageMode, difficultyMode, seen));
+    setScenario(generateRandomScenario(stageMode, difficultyMode, seen, rebuyMode));
     setAnswered(false);
     setSelected(null);
     setShowStudy(false);
@@ -490,7 +526,7 @@ export default function App() {
   }
   function reset() {
     seen.clear();
-    setScenario(generateRandomScenario(stageMode, difficultyMode, seen));
+    setScenario(generateRandomScenario(stageMode, difficultyMode, seen, rebuyMode));
     setAnswered(false);
     setSelected(null);
     setCorrect(0);
@@ -501,14 +537,21 @@ export default function App() {
   function changeStage(m) {
     setStageMode(m);
     seen.clear();
-    setScenario(generateRandomScenario(m, difficultyMode, seen));
+    setScenario(generateRandomScenario(m, difficultyMode, seen, rebuyMode));
     setAnswered(false);
     setSelected(null);
   }
   function changeDifficulty(m) {
     setDifficultyMode(m);
     seen.clear();
-    setScenario(generateRandomScenario(stageMode, m, seen));
+    setScenario(generateRandomScenario(stageMode, m, seen, rebuyMode));
+    setAnswered(false);
+    setSelected(null);
+  }
+  function changeRebuy(m) {
+    setRebuyMode(m);
+    seen.clear();
+    setScenario(generateRandomScenario(stageMode, difficultyMode, seen, m));
     setAnswered(false);
     setSelected(null);
   }
@@ -534,6 +577,7 @@ export default function App() {
         {strategyModes.map((m) => <Chip key={m} active={strategyMode === m} onClick={() => setStrategyMode(m)}>{m}</Chip>)}
         {difficultyModes.map((m) => <Chip key={m} active={difficultyMode === m} onClick={() => changeDifficulty(m)}>{m}</Chip>)}
         {drillModes.map((m) => <Chip key={m} active={drillMode === m} onClick={() => setDrillMode(m)}>{m}</Chip>)}
+        {rebuyModes.map((m) => <Chip key={m} active={rebuyMode === m} onClick={() => changeRebuy(m)}>{m}</Chip>)}
       </div>
 
       <div style={styles.controlsRow}>
@@ -546,6 +590,7 @@ export default function App() {
           <Badge>{scenario.level.stage}</Badge>
           <Badge>{fmt(scenario.level.sb)}/{fmt(scenario.level.bb)}</Badge>
           <Badge>BB Ante {fmt(scenario.level.bb)}</Badge>
+          <Badge>{rebuyMode}</Badge>
         </div>
 
         {warnings.length ? <div style={styles.warning}>⚠ {warnings.join(" · ")}</div> : null}
@@ -631,7 +676,7 @@ export default function App() {
         </div>
       )}
 
-      <div style={styles.footer}>Full desktop logic · mobile UI · no exact repeat spots</div>
+      <div style={styles.footer}>Full desktop logic · mobile UI · WSOP rebuy environment · no exact repeat spots</div>
     </div>
   );
 }
