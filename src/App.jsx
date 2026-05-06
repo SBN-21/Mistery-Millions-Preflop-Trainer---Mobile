@@ -558,9 +558,9 @@ function AppButton({ children, onClick, active = false, disabled = false, danger
     </button>
   );
 }
-function Card({ children, title }) {
+function Card({ children, title, className = "" }) {
   return (
-    <div style={{ background: "white", color: "#0f172a", borderRadius: 18, padding: 18, marginBottom: 16, boxShadow: "0 10px 30px rgba(0,0,0,.18)" }}>
+    <div className={className} style={{ background: "white", color: "#0f172a", borderRadius: 18, padding: 18, marginBottom: 16, boxShadow: "0 10px 30px rgba(0,0,0,.18)" }}>
       {title ? <h3 style={{ marginTop: 0 }}>{title}</h3> : null}
       {children}
     </div>
@@ -638,7 +638,10 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "#020617", color: "white", padding: 18, fontFamily: "Arial, sans-serif" }}>
       <style>{`
         * { box-sizing: border-box; }
-        .app-shell { max-width: 1150px; margin: 0 auto; }
+        .app-shell { max-width: 1150px; margin: 0 auto; display: flex; flex-direction: column; }
+        .settings-card { order: 3; }
+        .desktop-grid { order: 2; }
+        .tests-card { order: 1; }
         .top-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
         .page-title { font-size: clamp(24px, 6vw, 34px); margin-bottom: 4px; line-height: 1.05; }
         .desktop-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; }
@@ -677,12 +680,12 @@ export default function App() {
         </div>
 
         {showTests && (
-          <Card title="Self Tests">
+          <Card title="Self Tests" className="tests-card">
             {tests.map((t) => <div key={t.name} style={{ padding: 8, borderRadius: 8, marginBottom: 6, background: t.ok ? "#dcfce7" : "#fee2e2" }}>{t.ok ? "PASS" : "FAIL"} · {t.name}</div>)}
           </Card>
         )}
 
-        <Card>
+        <Card title="Options / Settings" className="settings-card">
           <div className="controls-row" style={{ marginBottom: 8 }}>
             {STRATEGY_MODES.map((m) => <AppButton key={m} active={strategyMode === m} onClick={() => setStrategyMode(m)}>{m}</AppButton>)}
             {TABLE_TYPES.map((m) => <AppButton key={m} active={tableType === m} onClick={() => setTableType(m)}>{m}</AppButton>)}
