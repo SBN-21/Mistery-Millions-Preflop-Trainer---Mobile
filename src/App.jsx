@@ -640,9 +640,9 @@ export default function App() {
         * { box-sizing: border-box; }
         .app-shell { max-width: 1150px; margin: 0 auto; display: flex; flex-direction: column; }
         .settings-card { order: 3; }
-        .desktop-grid { order: 2; }
+        .desktop-grid { order: 2; margin-top: 0; }
         .tests-card { order: 1; }
-        .top-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+        .top-bar { display: block; margin: 0 0 10px 0; padding: 0; min-height: 0; }
         .page-title { font-size: clamp(26px, 7vw, 34px); margin: 0; line-height: 1.05; white-space: nowrap; }
         .desktop-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; }
         .controls-row { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -668,10 +668,7 @@ export default function App() {
       `}</style>
       <div className="app-shell">
         <div className="top-bar">
-          <div>
-            <h1 className="page-title">Mini Mystery Trainer</h1>
-          </div>
-          
+          <h1 className="page-title">Mini Mystery Trainer</h1>
         </div>
 
         {showTests && (
