@@ -604,6 +604,7 @@ export default function App() {
     setSelected(null);
     setPostflop(null);
     setPostflopAction(null);
+    window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
   }
   function choose(action) {
     if (selected) return;
@@ -644,6 +645,7 @@ export default function App() {
         .controls-row { display: flex; flex-wrap: wrap; gap: 4px; }
         .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
         .mobile-secondary { display: block; }
+        .sticky-next { display: none; }
         @media (max-width: 760px) {
           body { overflow-x: hidden; }
           .app-shell { width: 100%; }
@@ -655,7 +657,10 @@ export default function App() {
           .controls-row button { white-space: nowrap; flex: 0 0 auto; margin: 0 !important; }
           .action-grid { grid-template-columns: 1fr 1fr; }
           .mobile-full { grid-column: 1 / -1; }
+          .sticky-next { display: block; position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 14px; background: rgba(2, 6, 23, 0.94); border-top: 1px solid #334155; z-index: 50; }
+          .sticky-next button { width: 100% !important; margin: 0 !important; padding: 14px !important; font-size: 16px; }
           textarea { font-size: 12px; }
+          .bottom-safe-space { height: 76px; }
         }
       `}</style>
       <div className="app-shell">
@@ -772,6 +777,12 @@ export default function App() {
             </Card>
           </div>
         </div>
+              {selected && (
+          <div className="sticky-next">
+            <AppButton onClick={nextHand} wide>Next Hand</AppButton>
+          </div>
+        )}
+        <div className="bottom-safe-space" />
       </div>
     </div>
   );
