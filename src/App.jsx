@@ -301,6 +301,11 @@ function solve(s, opts) {
       return score >= th ? ["3-BET JAM", `Short-stack resteal. No flatting at ${bb}BB.`] : ["FOLD", `Not enough to jam versus ${villainPos} open.`];
     }
     if (bb <= 30) {
+      const premiumJamHands = ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"];
+      if (premiumJamHands.includes(s.hand)) {
+        return ["3-BET JAM", `${s.hand} at ${bb}BB versus an open is a clear value jam. Never fold premiums at this stack depth.`];
+      }
+
       const shortLateOpen = lateVillain && villain && villain.bb <= 18;
       const valueJam = shortLateOpen && ["AJo", "AQo", "AQs", "AJs", "ATs", "KQs", "KJs", "77", "88", "99", "TT", "JJ"].includes(s.hand);
       const resteal = lateVillain && (bucket === "blocker" || bucket === "medium" || bucket === "strong" || ["55", "66", "77", "88", "99", "KQs", "KJs", "AJo"].includes(s.hand));
@@ -387,8 +392,13 @@ function frequencies(s, best, opts) {
 
   // Default is not always 100%; only use it after mixed overrides are checked.
 
+  // Premiums versus opens at 15-30BB are pure value jams.
+  if (facingOpen && bb <= 30 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(hand)) {
+    out["3-BET JAM"] = 100;
+  }
+
   // 8-10BB pairs are pure jams.
-  if (!facingOpen && !facingLimp && bb <= 10 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
+  else if (!facingOpen && !facingLimp && bb <= 10 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
     out.JAM = 100;
   }
 
