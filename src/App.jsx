@@ -484,6 +484,17 @@ function solve(s, opts) {
       return ["FOLD", `Avoid most flats at ${bb}BB versus open, but defend BB versus late opens with suited/playable hands when priced in.`];
     }
 
+    // Deep hero versus shorter opener: do not accidentally fold strong hands just because villain is 15-30BB.
+    // In position, pairs/strong broadways are clear continues, often value 3-bets.
+    if (bb >= 50 && posRank(p) > posRank(villainPos || "UTG") && villain && villain.bb <= 35) {
+      if (["JJ", "TT", "99", "88", "AKs", "AKo", "AQs", "AQo", "AJs", "KQs"].includes(s.hand)) {
+        return ["3-BET", `${s.hand} deep in position versus a ${villain.bb}BB ${villainPos} open is a clear continue. Prefer 3-bet for value/protection; calling is also acceptable sometimes.`];
+      }
+      if (["77", "66", "55", "KJs", "QJs", "JTs", "T9s"].includes(s.hand) && !openBig) {
+        return ["CALL", `${s.hand} deep in position versus shorter opener has enough playability to call. Do not over-fold.`];
+      }
+    }
+
     if (bb >= 50 && posRank(p) > posRank(villainPos || "UTG") && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(s.hand)) {
       return ["CALL", `Deep IP flat versus passive min-open. Keep dominated hands in.`];
     }
@@ -602,7 +613,17 @@ function legalActionFrequencies(s, best, opts) {
   } else if (!facingOpen && !facingLimp && bb >= 18 && bb <= 24 && ["AKs", "AKo", "AQs", "AQo", "QQ", "KK", "AA"].includes(hand)) {
     out.OPEN = 80;
     out.JAM = 20;
-  } else if (facingOpen && p === "BTN" && ["UTG", "UTG+1", "MP"].includes(s.villainPos || "") && bb >= 30 && bb <= 50 && ["KTs", "KJs", "QJs", "JTs", "QTs"].includes(hand)) {
+  } else if (facingOpen && bb >= 50 && heroIP && villain && villain.bb <= 35 && ["JJ", "TT", "99", "88", "AKs", "AKo", "AQs", "AQo", "AJs", "KQs"].includes(hand)) {
+    out["3-BET"] = 70;
+    if (out.CALL !== undefined) out.CALL = 30;
+  }
+
+  else if (facingOpen && bb >= 50 && heroIP && villain && villain.bb <= 35 && ["77", "66", "55", "KJs", "QJs", "JTs", "T9s"].includes(hand) && parseOpenSize(s.prior) < 3.0) {
+    out.CALL = 70;
+    if (out["3-BET"] !== undefined) out["3-BET"] = 30;
+  }
+
+  else if (facingOpen && p === "BTN" && ["UTG", "UTG+1", "MP"].includes(s.villainPos || "") && bb >= 30 && bb <= 50 && ["KTs", "KJs", "QJs", "JTs", "QTs"].includes(hand)) {
     const bbPlayer = s.table.BB;
     const aggressiveBehind = bbPlayer && ["aggressive", "loose"].includes(bbPlayer.type);
     out.FOLD = aggressiveBehind ? 70 : 55;
