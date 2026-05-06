@@ -642,8 +642,8 @@ export default function App() {
         .settings-card { order: 3; }
         .desktop-grid { order: 2; }
         .tests-card { order: 1; }
-        .top-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-        .page-title { font-size: clamp(24px, 6vw, 34px); margin-bottom: 4px; line-height: 1.05; }
+        .top-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+        .page-title { font-size: clamp(26px, 7vw, 34px); margin: 0; line-height: 1.05; white-space: nowrap; }
         .desktop-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; }
         .controls-row { display: flex; flex-wrap: wrap; gap: 4px; }
         .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
@@ -669,14 +669,9 @@ export default function App() {
       <div className="app-shell">
         <div className="top-bar">
           <div>
-            <h1 className="page-title">WSOP Mini Mystery Preflop Trainer</h1>
-            <div style={{ color: "#cbd5e1" }}>Standalone Vercel-safe full version: rebuy, bounty, frequencies, export, and postflop module.</div>
+            <h1 className="page-title">Mini Mystery Trainer</h1>
           </div>
-          <div className="top-actions">
-            <AppButton onClick={nextHand}>New Hand</AppButton>
-            <AppButton onClick={reset}>Reset</AppButton>
-            <AppButton onClick={() => setShowTests((v) => !v)}>Tests {tests.filter((t) => t.ok).length}/{tests.length}</AppButton>
-          </div>
+          
         </div>
 
         {showTests && (
