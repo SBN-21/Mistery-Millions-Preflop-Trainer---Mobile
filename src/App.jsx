@@ -244,7 +244,10 @@ function solve(s, opts) {
   const behind = playersBehind(p).map((x) => s.table[x]).filter(Boolean);
   const passiveBehind = behind.filter((x) => ["tight", "passive"].includes(x.type)).length;
   const aggroBehind = behind.filter((x) => ["loose", "aggressive"].includes(x.type)).length;
-  const phaseJamAdj = phaseAdj(phase, "thinJam", s.level.level, heroCovers);
+  const coverBehindCount = behind.filter((x) => bb > x.bb).length;
+  const coveredByBehindCount = behind.filter((x) => bb < x.bb).length;
+  const bountyBehindAdj = phase === "Day 2 Bounty" ? (coverBehindCount >= 2 ? -5 : coverBehindCount === 1 ? -3 : coveredByBehindCount >= 2 ? 4 : 0) : 0;
+  const phaseJamAdj = phaseAdj(phase, "thinJam", s.level.level, heroCovers) + bountyBehindAdj;
   const jamAdj = strategyMode === "Live Exploit" ? tableAdj(tableType, "jam") + phaseJamAdj : 0;
   const openAdj = strategyMode === "Live Exploit" ? tableAdj(tableType, "open") : 0;
 
@@ -289,7 +292,17 @@ function solve(s, opts) {
       const valueJam = shortLateOpen && ["AJo", "AQo", "AQs", "AJs", "ATs", "KQs", "KJs", "77", "88", "99", "TT", "JJ"].includes(s.hand);
       const resteal = lateVillain && (bucket === "blocker" || bucket === "medium" || bucket === "strong" || ["55", "66", "77", "88", "99", "KQs", "KJs", "AJo"].includes(s.hand));
       if (valueJam || (resteal && score >= 42 + adj + tableAdj(tableType, "resteal"))) return ["3-BET JAM", `Resteal/value jam versus ${villainPos} open.`];
-      return ["FOLD", `Avoid flats at ${bb}BB versus open.`];
+
+      // BB can still defend versus small late-position opens at 20-30BB.
+      // The old rule over-folded BB by forcing jam/fold only.
+      if (p === "BB" && lateVillain && openTiny && bb >= 20 && score >= 40 + adj && isSuited(s.hand)) {
+        return ["CALL", `BB gets a price versus a small ${villainPos} open. Suited/playable hands can call and realize equity.`];
+      }
+      if (p === "BB" && lateVillain && openTiny && passiveVillain && bb >= 22 && score >= 50 + adj) {
+        return ["CALL", `Versus a passive small late open, BB can defend playable broadways instead of over-folding.`];
+      }
+
+      return ["FOLD", `Avoid most flats at ${bb}BB versus open, but defend BB versus small late opens with suited/playable hands.`];
     }
     if (bb >= 50 && posRank(p) > posRank(villainPos || "UTG") && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(s.hand)) {
       return ["CALL", `Deep IP flat versus passive min-open. Keep dominated hands in.`];
@@ -332,7 +345,11 @@ function frequencies(s, best, opts) {
   const passiveVillain = villain?.type === "passive";
   const heroIP = s.villainPos ? posRank(p) > posRank(s.villainPos) : false;
 
-  if (facingOpen && bb >= 50 && heroIP && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(hand)) {
+  if (facingOpen && s.heroPos === "BB" && openTiny && villain && ["CO", "BTN", "SB"].includes(s.villainPos) && bb >= 20 && bb <= 35 && isSuited(hand) && score >= 40) {
+    out.CALL = 60;
+    out["3-BET JAM"] = out["3-BET JAM"] !== undefined ? 25 : 0;
+    out.FOLD = 15;
+  } else if (facingOpen && bb >= 50 && heroIP && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(hand)) {
     out.CALL = hand === "AQo" ? 70 : 80;
     out["3-BET"] = hand === "AQo" ? 30 : 20;
   } else if (!facingOpen && !facingLimp && bb >= 16 && bb <= 22 && isLate(p) && ["55", "66", "77", "88", "A5s", "A4s", "KTs", "K9s", "QTs", "JTs", "T9s", "98s", "87s"].includes(hand)) {
