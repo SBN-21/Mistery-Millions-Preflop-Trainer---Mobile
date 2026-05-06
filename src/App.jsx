@@ -356,6 +356,15 @@ function solve(s, opts) {
     const limpJamHands = ["66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA", "ATo", "AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQs", "KJs"];
 
     if (bb <= 15) {
+      // At very short stacks, Ax blocker hands become profitable limp-jams frequently,
+      // especially in live fields where limp/folds are common.
+      if (
+        bb <= 10 &&
+        ["A2o", "A3o", "A4o", "A5o", "A2s", "A3s", "A4s", "A5s", "A7s", "A8o", "A9o", "ATo"].includes(s.hand)
+      ) {
+        return ["JAM", `${s.hand} at ${bb}BB over limp: blocker hand with fold equity + dead money.`];
+      }
+
       const threshold = (isLate(p) ? 38 : 48) - Math.min(10, limpCount * 4);
       return score >= threshold
         ? ["JAM", `Jam over ${limpCount} limper(s): dead money + fold equity.`]
@@ -420,6 +429,12 @@ function solve(s, opts) {
         : ["FOLD", `Not enough to jam versus ${villainPos} open.`];
     }
 
+    // BB vs SB correction: this is heads-up, you close the action, and suited/playable hands
+    // realize equity well. Do not over-fold suited connectors/broadways versus small SB opens.
+    if (p === "BB" && villainPos === "SB" && bb <= 25 && openSize <= 2.5 && isSuited(s.hand) && score >= 40) {
+      return ["CALL", `BB versus SB open: you close the action and ${s.hand} realizes equity well. Call rather than over-folding.`];
+    }
+
     if (bb <= 30) {
       const premiumJamHands = ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"];
       if (premiumJamHands.includes(s.hand)) {
@@ -427,6 +442,20 @@ function solve(s, opts) {
       }
 
       const shortLateOpen = lateVillain && villain && villain.bb <= 18;
+
+      // Live exploit adjustment: tiny stacks opening instead of open-jamming are often capped/weak,
+      // especially in live WSOP fields. Small pairs can profitably reshove some frequency.
+      if (
+        villain &&
+        villain.bb <= 10 &&
+        bb >= 12 &&
+        bb <= 18 &&
+        ["22", "33", "44", "55", "66"].includes(s.hand) &&
+        ["LJ", "HJ", "CO", "BTN", "SB"].includes(villainPos || "")
+      ) {
+        return ["3-BET JAM", `${s.hand} can reshove versus a short-stack open. Live fields often open too weak here instead of jamming.`];
+      }
+
       const valueJam = shortLateOpen && ["AJo", "ATs", "AJs", "KQs", "KJs", "77", "88", "99"].includes(s.hand);
       const resteal = lateVillain && (bucket === "blocker" || bucket === "medium" || bucket === "strong" || ["55", "66", "77", "88", "99", "KQs", "KJs", "AJo"].includes(s.hand));
 
@@ -530,7 +559,12 @@ function legalActionFrequencies(s, best, opts) {
 
   if (facingOpen && bb <= 30 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(hand)) {
     out["3-BET JAM"] = 100;
-  } else if (!facingOpen && !facingLimp && bb <= 10 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
+  } else if (facingLimp && bb <= 10 && ["A2o", "A3o", "A4o", "A5o", "A2s", "A3s", "A4s", "A5s", "A7s", "A8o", "A9o", "ATo"].includes(hand)) {
+    out.JAM = 80;
+    out.FOLD = 20;
+  }
+
+  else if (!facingOpen && !facingLimp && bb <= 10 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
     out.JAM = 100;
   } else if (facingLimp && bb >= 16 && bb <= 25 && ["66", "77", "88", "99", "TT", "ATo", "AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQs", "KJs"].includes(hand)) {
     out.JAM = opts.phase === "Day 1 Post-Reg" ? 85 : opts.tableType === "Loose/Gambly" ? 65 : 75;
@@ -546,10 +580,29 @@ function legalActionFrequencies(s, best, opts) {
     const aggressiveBehind = bbPlayer && ["aggressive", "loose"].includes(bbPlayer.type);
     out.FOLD = aggressiveBehind ? 70 : 55;
     out.CALL = aggressiveBehind ? 30 : 45;
-  } else if (facingOpen && bb >= 50 && heroIP && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(hand)) {
+  } else if (
+    facingOpen &&
+    villain &&
+    villain.bb <= 10 &&
+    bb >= 12 &&
+    bb <= 18 &&
+    ["22", "33", "44", "55", "66"].includes(hand) &&
+    ["LJ", "HJ", "CO", "BTN", "SB"].includes(s.villainPos || "")
+  ) {
+    out["3-BET JAM"] = 40;
+    out.FOLD = 60;
+  }
+
+  else if (facingOpen && bb >= 50 && heroIP && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(hand)) {
     out.CALL = hand === "AQo" ? 70 : 80;
     out["3-BET"] = hand === "AQo" ? 30 : 20;
-  } else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos) && bb >= 20 && bb <= 35 && isSuited(hand) && score >= 40 && (openTiny || (parseOpenSize(s.prior) <= 3.0 && passiveVillain))) {
+  } else if (facingOpen && p === "BB" && s.villainPos === "SB" && bb >= 12 && bb <= 30 && isSuited(hand) && score >= 40 && parseOpenSize(s.prior) <= 2.5) {
+    out.CALL = 75;
+    out["3-BET JAM"] = 15;
+    out.FOLD = 10;
+  }
+
+  else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos) && bb >= 20 && bb <= 35 && isSuited(hand) && score >= 40 && (openTiny || (parseOpenSize(s.prior) <= 3.0 && passiveVillain))) {
     // BB closes action. Versus late opens, suited playable hands are often calls, not pure folds.
     out.CALL = passiveVillain ? 70 : 60;
     if (out["3-BET JAM"] !== undefined && !passiveVillain) out["3-BET JAM"] = 20;
