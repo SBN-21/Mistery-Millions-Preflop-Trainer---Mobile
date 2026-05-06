@@ -438,11 +438,17 @@ function solve(s, opts) {
         return ["CALL", `BB gets a price versus small ${villainPos} open. Suited/playable hands can call and realize equity.`];
       }
 
+      // BB defense correction: versus BTN/SB late opens, especially passive openers,
+      // suited connectors and suited broadways should not be pure folds just because the open is 2.7x-3.0x.
+      if (p === "BB" && lateVillain && bb >= 20 && openSize <= 3.0 && passiveVillain && isSuited(s.hand) && score >= 42 + adj) {
+        return ["CALL", `BB closes the action versus a passive ${villainPos} open. ${s.hand} has enough suited/playable equity to defend, even versus a 3.0x open.`];
+      }
+
       if (p === "BB" && lateVillain && openTiny && passiveVillain && bb >= 22 && score >= 50 + adj) {
         return ["CALL", `Versus passive small late open, BB can defend playable broadways.`];
       }
 
-      return ["FOLD", `Avoid most flats at ${bb}BB versus open, but defend BB versus small late opens with suited/playable hands.`];
+      return ["FOLD", `Avoid most flats at ${bb}BB versus open, but defend BB versus late opens with suited/playable hands when priced in.`];
     }
 
     if (bb >= 50 && posRank(p) > posRank(villainPos || "UTG") && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(s.hand)) {
@@ -543,10 +549,11 @@ function legalActionFrequencies(s, best, opts) {
   } else if (facingOpen && bb >= 50 && heroIP && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(hand)) {
     out.CALL = hand === "AQo" ? 70 : 80;
     out["3-BET"] = hand === "AQo" ? 30 : 20;
-  } else if (facingOpen && p === "BB" && openTiny && villain && ["CO", "BTN", "SB"].includes(s.villainPos) && bb >= 20 && bb <= 35 && isSuited(hand) && score >= 40) {
-    out.CALL = 60;
-    if (out["3-BET JAM"] !== undefined) out["3-BET JAM"] = 25;
-    out.FOLD = 15;
+  } else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos) && bb >= 20 && bb <= 35 && isSuited(hand) && score >= 40 && (openTiny || (parseOpenSize(s.prior) <= 3.0 && passiveVillain))) {
+    // BB closes action. Versus late opens, suited playable hands are often calls, not pure folds.
+    out.CALL = passiveVillain ? 70 : 60;
+    if (out["3-BET JAM"] !== undefined && !passiveVillain) out["3-BET JAM"] = 20;
+    out.FOLD = passiveVillain ? 30 : 20;
   } else if (facingLimp && bb > 40 && isLate(p) && score >= 34) {
     out.OPEN = 90;
     if (out.CALL !== undefined) out.CALL = 10;
