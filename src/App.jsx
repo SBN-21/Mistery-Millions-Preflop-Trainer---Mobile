@@ -258,10 +258,23 @@ function solve(s, opts) {
 
   if (facingLimp) {
     const limpCount = s.limpers.length || 1;
+    const limpJamHands = ["66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA", "ATo", "AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQs", "KJs"];
+
     if (bb <= 15) {
       const th = (isLate(p) ? 38 : 48) - Math.min(10, limpCount * 4);
       return score >= th ? ["JAM", `Jam over ${limpCount} limper(s): dead money + fold equity.`] : ["FOLD", `Jam/fold only over limps at ${bb}BB.`];
     }
+
+    // 16-25BB over a limp: avoid small iso/fold with strong but vulnerable hands.
+    // ATo/AJo/KQs/66+ benefit from jamming dead money, especially after registration closes.
+    if (bb <= 25 && limpJamHands.includes(s.hand)) {
+      return ["JAM", `${bb}BB over ${limpCount} limper(s): jam and punish dead money. This avoids awkward iso/fold spots and leverages fold equity.`];
+    }
+
+    if (bb <= 25 && isLate(p) && ["A5s", "A4s", "KTs", "QTs", "JTs", "T9s", "98s", "87s", "55"].includes(s.hand)) {
+      return ["JAM", `${bb}BB late position over limper(s): suited/blocker hand performs better as a jam than a small iso.`];
+    }
+
     const isoTh = bb > 40 ? (p === "BTN" ? 28 : p === "CO" ? 32 : isEarly(p) ? 58 : 46) : p === "BTN" || p === "CO" ? 40 : 54;
     return score >= isoTh + openAdj ? ["OPEN", `Iso-raise limpers. Size about ${3 + limpCount}BB.`] : ["FOLD", `Not enough to iso limpers from ${p}.`];
   }
@@ -309,14 +322,40 @@ function solve(s, opts) {
     }
     if (p === "BB" && lateVillain && passiveVillain && openTiny && isSuited(s.hand) && score >= 80 && bb >= 60) return ["CALL", `Deep BB suited broadway can flat versus passive late min-open.`];
     if (score >= 85 + adj) return ["3-BET", `Value 3-bet.`];
+
+    // BTN suited broadways versus early opens are not pure folds in live events,
+    // but they are dominated/squeeze-sensitive. Treat as mixed, not automatic call.
+    if (
+      p === "BTN" &&
+      ["UTG", "UTG+1", "MP"].includes(villainPos || "") &&
+      bb >= 30 &&
+      bb <= 50 &&
+      ["KTs", "KJs", "QJs", "JTs", "QTs"].includes(s.hand)
+    ) {
+      return ["FOLD", `${s.hand} on BTN versus ${villainPos} open is close/mixed. Default fold versus aggressive/strong early range, but calling some frequency is acceptable if blinds are passive and opener is weak.`];
+    }
+
     if (p === "BB" && lateVillain && score >= 30 + adj) return ["CALL", `BB defend versus late open.`];
     if (score >= 45 + adj && lateVillain && posRank(p) > posRank(villainPos || "UTG")) return ["CALL", `Playable in position versus late open.`];
     return ["FOLD", `Default fold versus open.`];
   }
 
   if (bb <= 15) {
-    let th = isEarly(p) ? 58 : p === "LJ" || p === "HJ" ? 46 : p === "CO" ? 34 : p === "BTN" ? 28 : 24;
-    const pushAdj = Math.max(-8, Math.min(5, jamAdj - passiveBehind * 2 + aggroBehind * 2));
+    const pairHands = ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"];
+    const emergencyBroadways = ["AKs", "AKo", "AQs", "AQo", "AJs", "AJo", "ATs", "KQs", "KJs", "QJs", "JTs"];
+    const emergencyAces = ["A2s", "A3s", "A4s", "A5s", "A7s", "A8o", "A9o", "ATo"];
+
+    // True short-stack correction: at 8-10BB, pairs are not folds from early/mid position.
+    // You are about to lose BB + ante, and pairs realize equity well when called.
+    if (bb <= 10 && pairHands.includes(s.hand)) {
+      return ["JAM", `${bb}BB ${p}: pocket pair push. At this stack depth, blind/ante pressure makes ${s.hand} a profitable open-jam even from early position.`];
+    }
+    if (bb <= 10 && (emergencyBroadways.includes(s.hand) || (isLate(p) && emergencyAces.includes(s.hand)))) {
+      return ["JAM", `${bb}BB ${p}: emergency push/fold spot. This hand has enough equity and fold equity to jam.`];
+    }
+
+    let th = isEarly(p) ? 54 : p === "LJ" || p === "HJ" ? 44 : p === "CO" ? 32 : p === "BTN" ? 26 : 22;
+    const pushAdj = bb <= 10 ? 0 : Math.max(-8, Math.min(5, jamAdj - passiveBehind * 2 + aggroBehind * 2));
     return score >= th + pushAdj ? ["JAM", `${bb}BB ${p}: profitable open-jam.`] : ["FOLD", `${bb}BB jam/fold: hand below range.`];
   }
 
@@ -334,34 +373,71 @@ function solve(s, opts) {
 function frequencies(s, best, opts) {
   const legal = legalActions(s);
   const out = Object.fromEntries(legal.map((a) => [a, 0]));
-  out[best] = 100;
   const bb = s.hero.bb;
   const p = s.heroPos;
   const hand = s.hand;
+  const score = handScore(hand);
   const facingOpen = hasOpen(s.prior);
   const facingLimp = hasLimp(s.prior);
   const villain = s.villain;
   const openTiny = parseOpenSize(s.prior) <= 2.0;
   const passiveVillain = villain?.type === "passive";
   const heroIP = s.villainPos ? posRank(p) > posRank(s.villainPos) : false;
+  const limpCount = s.limpers?.length || (facingLimp ? 1 : 0);
 
-  if (facingOpen && s.heroPos === "BB" && openTiny && villain && ["CO", "BTN", "SB"].includes(s.villainPos) && bb >= 20 && bb <= 35 && isSuited(hand) && score >= 40) {
-    out.CALL = 60;
-    out["3-BET JAM"] = out["3-BET JAM"] !== undefined ? 25 : 0;
-    out.FOLD = 15;
+  // Default is not always 100%; only use it after mixed overrides are checked.
+
+  // 8-10BB pairs are pure jams.
+  if (!facingOpen && !facingLimp && bb <= 10 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
+    out.JAM = 100;
+  }
+
+  // 16-25BB over limpers: strong vulnerable hands are mostly jams, but some iso exists deeper/softer.
+  else if (facingLimp && bb >= 16 && bb <= 25 && ["66", "77", "88", "99", "TT", "ATo", "AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQs", "KJs"].includes(hand)) {
+    out.JAM = opts.phase === "Day 1 Post-Reg" ? 85 : opts.tableType === "Loose/Gambly" ? 65 : 75;
+    if (out.OPEN !== undefined) out.OPEN = 100 - out.JAM;
+  }
+
+  // Late-position semi-bluff open-jams at 16-22BB are mixed.
+  else if (!facingOpen && !facingLimp && bb >= 16 && bb <= 22 && isLate(p) && ["55", "66", "77", "88", "A5s", "A4s", "KTs", "K9s", "QTs", "JTs", "T9s", "98s", "87s"].includes(hand)) {
+    out.JAM = opts.tableType === "Loose/Gambly" ? 55 : opts.phase === "Day 1 Post-Reg" ? 78 : 70;
+    out.OPEN = 100 - out.JAM;
+  }
+
+  // Premium/value hands around 20BB prefer open/call but jam sometimes.
+  else if (!facingOpen && !facingLimp && bb >= 18 && bb <= 24 && ["AKs", "AKo", "AQs", "AQo", "QQ", "KK", "AA"].includes(hand)) {
+    out.OPEN = 80;
+    out.JAM = 20;
+  }
+
+  // Deep IP versus passive min-open: flat is preferred, 3-bet mixed.
+  else if (facingOpen && s.heroPos === "BTN" && ["UTG", "UTG+1", "MP"].includes(s.villainPos || "") && bb >= 30 && bb <= 50 && ["KTs", "KJs", "QJs", "JTs", "QTs"].includes(hand)) {
+    const bbPlayer = s.table.BB;
+    const aggressiveBehind = bbPlayer && ["aggressive", "loose"].includes(bbPlayer.type);
+    out.FOLD = aggressiveBehind ? 70 : 55;
+    out.CALL = aggressiveBehind ? 30 : 45;
   } else if (facingOpen && bb >= 50 && heroIP && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(hand)) {
     out.CALL = hand === "AQo" ? 70 : 80;
     out["3-BET"] = hand === "AQo" ? 30 : 20;
-  } else if (!facingOpen && !facingLimp && bb >= 16 && bb <= 22 && isLate(p) && ["55", "66", "77", "88", "A5s", "A4s", "KTs", "K9s", "QTs", "JTs", "T9s", "98s", "87s"].includes(hand)) {
-    out.JAM = opts.tableType === "Loose/Gambly" ? 55 : opts.phase === "Day 1 Post-Reg" ? 78 : 70;
-    out.OPEN = 100 - out.JAM;
-  } else if (!facingOpen && !facingLimp && bb >= 18 && bb <= 24 && ["AKs", "AKo", "AQs", "AQo", "QQ", "KK", "AA"].includes(hand)) {
-    out.OPEN = 80;
-    out.JAM = 20;
-  } else if (facingLimp && bb > 40 && isLate(p)) {
+  }
+
+  // BB defense versus small late opens: call/jam/fold mix.
+  else if (facingOpen && s.heroPos === "BB" && openTiny && villain && ["CO", "BTN", "SB"].includes(s.villainPos) && bb >= 20 && bb <= 35 && isSuited(hand) && score >= 40) {
+    out.CALL = 60;
+    if (out["3-BET JAM"] !== undefined) out["3-BET JAM"] = 25;
+    out.FOLD = 15;
+  }
+
+  // Deep late iso over limp is mostly open with occasional overlimp for pot control.
+  else if (facingLimp && bb > 40 && isLate(p) && score >= 34) {
     out.OPEN = 90;
     if (out.CALL !== undefined) out.CALL = 10;
   }
+
+  else {
+    out[best] = 100;
+  }
+
   const total = Object.values(out).reduce((a, b) => a + b, 0) || 1;
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v > 0).map(([k, v]) => [k, Math.round((v / total) * 100)]));
 }
@@ -449,6 +525,14 @@ function runTests() {
   ip.villain = { pos: "MP", bb: 94, chips: 56400, type: "passive", label: "Big" };
   ip.prior = "passive MP (94BB) opens to 2.0x";
   assert("Deep IP AQo vs passive min-open can call", solve(ip, opts)[0] === "CALL");
+  const pair8 = generateScenario("Push/Fold", 8888);
+  pair8.level = { level: 22, sb: 15000, bb: 30000, stage: "Push/Fold" };
+  pair8.heroPos = "UTG+1";
+  pair8.hand = "33";
+  pair8.hero = { pos: "UTG+1", bb: 8, chips: 240000, type: "hero", label: "Short" };
+  pair8.table["UTG+1"] = pair8.hero;
+  pair8.prior = "Folded to you; behind: MP 15BB, LJ 6BB, HJ 12BB, CO 8BB, BTN 43BB, SB 39BB, BB 16BB";
+  assert("8BB UTG+1 33 is an open-jam", solve(pair8, { strategyMode: "Live Exploit", tableType: "Standard", phase: "Day 1 Post-Reg" })[0] === "JAM");
   return t;
 }
 
