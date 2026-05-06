@@ -536,7 +536,7 @@ function runTests() {
   return t;
 }
 
-function AppButton({ children, onClick, active = false, disabled = false, danger = false }) {
+function AppButton({ children, onClick, active = false, disabled = false, danger = false, wide = false }) {
   return (
     <button
       onClick={onClick}
@@ -551,6 +551,7 @@ function AppButton({ children, onClick, active = false, disabled = false, danger
         fontWeight: 700,
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.6 : 1,
+        width: wide ? "100%" : undefined,
       }}
     >
       {children}
@@ -634,13 +635,36 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#020617", color: "white", padding: 18, fontFamily: "Arial, sans-serif" }}>
-      <div style={{ maxWidth: 1150, margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
+      <style>{`
+        * { box-sizing: border-box; }
+        .app-shell { max-width: 1150px; margin: 0 auto; }
+        .top-bar { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+        .page-title { font-size: clamp(24px, 6vw, 34px); margin-bottom: 4px; line-height: 1.05; }
+        .desktop-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 16px; }
+        .controls-row { display: flex; flex-wrap: wrap; gap: 4px; }
+        .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; }
+        .mobile-secondary { display: block; }
+        @media (max-width: 760px) {
+          body { overflow-x: hidden; }
+          .app-shell { width: 100%; }
+          .top-bar { align-items: stretch; }
+          .top-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 8px; }
+          .top-actions button { width: 100% !important; margin: 0 !important; }
+          .desktop-grid { grid-template-columns: 1fr; }
+          .controls-row { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+          .controls-row button { white-space: nowrap; flex: 0 0 auto; margin: 0 !important; }
+          .action-grid { grid-template-columns: 1fr 1fr; }
+          .mobile-full { grid-column: 1 / -1; }
+          textarea { font-size: 12px; }
+        }
+      `}</style>
+      <div className="app-shell">
+        <div className="top-bar">
           <div>
-            <h1 style={{ fontSize: 34, marginBottom: 4 }}>WSOP Mini Mystery Preflop Trainer</h1>
+            <h1 className="page-title">WSOP Mini Mystery Preflop Trainer</h1>
             <div style={{ color: "#cbd5e1" }}>Standalone Vercel-safe full version: rebuy, bounty, frequencies, export, and postflop module.</div>
           </div>
-          <div>
+          <div className="top-actions">
             <AppButton onClick={nextHand}>New Hand</AppButton>
             <AppButton onClick={reset}>Reset</AppButton>
             <AppButton onClick={() => setShowTests((v) => !v)}>Tests {tests.filter((t) => t.ok).length}/{tests.length}</AppButton>
@@ -654,12 +678,12 @@ export default function App() {
         )}
 
         <Card>
-          <div style={{ marginBottom: 8 }}>
+          <div className="controls-row" style={{ marginBottom: 8 }}>
             {STRATEGY_MODES.map((m) => <AppButton key={m} active={strategyMode === m} onClick={() => setStrategyMode(m)}>{m}</AppButton>)}
             {TABLE_TYPES.map((m) => <AppButton key={m} active={tableType === m} onClick={() => setTableType(m)}>{m}</AppButton>)}
             {PHASES.map((m) => <AppButton key={m} active={phaseMode === m} onClick={() => setPhaseMode(m)}>{m === "Auto" ? `Auto (${phase})` : m}</AppButton>)}
           </div>
-          <div>
+          <div className="controls-row">
             {STAGES.map((m) => <AppButton key={m} active={stage === m} onClick={() => changeStage(m)}>{m}</AppButton>)}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginTop: 14 }}>
@@ -670,7 +694,7 @@ export default function App() {
           </div>
         </Card>
 
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(280px,1fr)", gap: 16 }}>
+        <div className="desktop-grid">
           <div>
             <Card>
               <div style={{ marginBottom: 12 }}>
@@ -702,8 +726,10 @@ export default function App() {
                 </div>
               </div>
               <div style={{ marginTop: 16 }}>
-                <strong>Choose your action</strong><br />
-                {legal.map((a) => <AppButton key={a} onClick={() => choose(a)} disabled={!!selected} active={selected === a}>{a}</AppButton>)}
+                <strong>Choose your action</strong>
+                <div className="action-grid">
+                  {legal.map((a) => <AppButton key={a} onClick={() => choose(a)} disabled={!!selected} active={selected === a} wide>{a}</AppButton>)}
+                </div>
               </div>
             </Card>
 
@@ -726,7 +752,9 @@ export default function App() {
                   <div style={{ marginTop: 16, padding: 14, borderRadius: 14, background: "#f1f5f9" }}>
                     <h3>Postflop continuation</h3>
                     <p>You take preflop line <strong>{postflop.preflop}</strong>. One player calls. Flop: <strong>{postflop.flop.name}</strong>.</p>
-                    {POSTFLOP_ACTIONS.map((a) => <AppButton key={a} onClick={() => setPostflopAction(a)} disabled={!!postflopAction} active={postflopAction === a}>{a}</AppButton>)}
+                    <div className="action-grid">
+                      {POSTFLOP_ACTIONS.map((a) => <AppButton key={a} onClick={() => setPostflopAction(a)} disabled={!!postflopAction} active={postflopAction === a} wide>{a}</AppButton>)}
+                    </div>
                     {postflopAction && <p><strong>Best:</strong> {solvePostflop(scenario, postflop.flop, postflopAction).best}. {solvePostflop(scenario, postflop.flop, postflopAction).reason}</p>}
                   </div>
                 )}
