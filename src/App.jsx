@@ -375,6 +375,10 @@ function solve(s, opts) {
       return ["JAM", `${bb}BB over ${limpCount} limper(s): jam and punish dead money. Avoid awkward iso/fold spots.`];
     }
 
+    if (bb <= 25 && limpCount >= 2 && ["A2s", "A3s", "A4s", "A5s", "KTs", "QTs", "JTs", "T9s", "98s", "87s", "55"].includes(s.hand)) {
+      return ["JAM", `${bb}BB over ${limpCount} limpers: jam the dead money. ${s.hand} has blocker/playability and performs better as a shove than an awkward iso.`];
+    }
+
     if (bb <= 25 && isLate(p) && ["A5s", "A4s", "KTs", "QTs", "JTs", "T9s", "98s", "87s", "55"].includes(s.hand)) {
       return ["JAM", `${bb}BB late position over limper(s): suited/blocker hand performs better as a jam.`];
     }
@@ -513,8 +517,17 @@ function solve(s, opts) {
       return ["JAM", `${bb}BB ${p}: emergency push/fold spot. This hand has enough equity and fold equity to jam.`];
     }
 
-    const threshold = isEarly(p) ? 54 : p === "LJ" || p === "HJ" ? 44 : p === "CO" ? 32 : p === "BTN" ? 26 : 22;
-    const pushAdj = bb <= 10 ? 0 : Math.max(-8, Math.min(5, jamAdj - passiveBehind * 2 + aggroBehind * 2));
+    const shortBehindCount = behind.filter((x) => x.bb <= 16).length;
+    const weakEarlySuitedAce = ["A2s", "A3s", "A4s", "A5s"].includes(s.hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p);
+
+    // 11-15BB early/mid weak suited aces are not automatic jams when many stacks remain behind.
+    // These hands have blocker value but perform poorly when called, so reshove/call density matters.
+    if (bb >= 11 && bb <= 15 && weakEarlySuitedAce && (shortBehindCount >= 2 || aggroBehind >= 2)) {
+      return ["FOLD", `${bb}BB ${p} with ${s.hand}: close/mixed, but default fold with multiple reshove/calling stacks behind.`];
+    }
+
+    const threshold = isEarly(p) ? 56 : p === "LJ" || p === "HJ" ? 46 : p === "CO" ? 32 : p === "BTN" ? 26 : 22;
+    const pushAdj = bb <= 10 ? 0 : Math.max(-8, Math.min(8, jamAdj - passiveBehind * 2 + aggroBehind * 2 + Math.max(0, shortBehindCount - 1) * 2));
 
     return score >= threshold + pushAdj
       ? ["JAM", `${bb}BB ${p}: profitable open-jam.`]
@@ -566,10 +579,24 @@ function legalActionFrequencies(s, best, opts) {
 
   else if (!facingOpen && !facingLimp && bb <= 10 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
     out.JAM = 100;
-  } else if (facingLimp && bb >= 16 && bb <= 25 && ["66", "77", "88", "99", "TT", "ATo", "AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQs", "KJs"].includes(hand)) {
+  } else if (facingLimp && bb >= 16 && bb <= 25 && (s.limpers?.length || 1) >= 2 && ["A2s", "A3s", "A4s", "A5s", "KTs", "QTs", "JTs", "T9s", "98s", "87s", "55"].includes(hand)) {
+    out.JAM = opts.phase === "Day 1 Post-Reg" ? 80 : opts.tableType === "Loose/Gambly" ? 60 : 70;
+    if (out.OPEN !== undefined) out.OPEN = 100 - out.JAM;
+  }
+
+  else if (facingLimp && bb >= 16 && bb <= 25 && ["66", "77", "88", "99", "TT", "ATo", "AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQs", "KJs"].includes(hand)) {
     out.JAM = opts.phase === "Day 1 Post-Reg" ? 85 : opts.tableType === "Loose/Gambly" ? 65 : 75;
     if (out.OPEN !== undefined) out.OPEN = 100 - out.JAM;
-  } else if (!facingOpen && !facingLimp && bb >= 16 && bb <= 22 && isLate(p) && ["55", "66", "77", "88", "A5s", "A4s", "KTs", "K9s", "QTs", "JTs", "T9s", "98s", "87s"].includes(hand)) {
+  } else if (!facingOpen && !facingLimp && bb >= 11 && bb <= 15 && ["A2s", "A3s", "A4s", "A5s"].includes(hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p)) {
+    const behind = playersBehind(p).map((pos) => s.table[pos]).filter(Boolean);
+    const shortBehind = behind.filter((x) => x.bb <= 16).length;
+    const aggroBehind = behind.filter((x) => ["loose", "aggressive"].includes(x.type)).length;
+    const danger = shortBehind >= 2 || aggroBehind >= 2;
+    out.FOLD = danger ? 70 : 45;
+    out.JAM = danger ? 30 : 55;
+  }
+
+  else if (!facingOpen && !facingLimp && bb >= 16 && bb <= 22 && isLate(p) && ["55", "66", "77", "88", "A5s", "A4s", "KTs", "K9s", "QTs", "JTs", "T9s", "98s", "87s"].includes(hand)) {
     out.JAM = opts.tableType === "Loose/Gambly" ? 55 : opts.phase === "Day 1 Post-Reg" ? 78 : 70;
     out.OPEN = 100 - out.JAM;
   } else if (!facingOpen && !facingLimp && bb >= 18 && bb <= 24 && ["AKs", "AKo", "AQs", "AQo", "QQ", "KK", "AA"].includes(hand)) {
