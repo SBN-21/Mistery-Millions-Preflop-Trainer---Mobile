@@ -389,6 +389,8 @@ function solve(s, opts) {
           ? 28
           : p === "CO"
           ? 32
+          : p === "MP" || p === "LJ" || p === "HJ"
+          ? 42
           : isEarly(p)
           ? 58
           : 46
@@ -404,6 +406,14 @@ function solve(s, opts) {
   if (!facingOpen && p === "SB") {
     const bbType = s.table.BB.type;
     const exploit = strategyMode === "Live Exploit" && ["tight", "passive"].includes(bbType) ? -6 : ["loose", "aggressive"].includes(bbType) ? 4 : 0;
+    const bbIsTightPassive = ["tight", "passive"].includes(bbType);
+    const strongPlayableOpenHands = ["AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQo", "KJs", "KQs", "QJs", "JTs", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"];
+
+    // 18-24BB SB vs tight/passive BB: strong playable hands prefer small open over pure jam.
+    // You keep dominated hands in and avoid wasting value when BB over-folds.
+    if (bb >= 18 && bb <= 24 && bbIsTightPassive && strongPlayableOpenHands.includes(s.hand)) {
+      return ["OPEN", `${s.hand} SB vs tight/passive BB at ${bb}BB: prefer small open. It keeps worse hands in and still exploits BB over-folding.`];
+    }
 
     if (bb <= 20) {
       return score >= 28 + exploit + jamAdj
@@ -545,7 +555,7 @@ function solve(s, opts) {
       if (["JJ", "TT", "99", "88", "AKs", "AKo", "AQs", "AQo", "AJs", "KQs"].includes(s.hand)) {
         return ["3-BET", `${s.hand} deep in position versus a ${villain.bb}BB ${villainPos} open is a clear continue. Prefer 3-bet for value/protection; calling is also acceptable sometimes.`];
       }
-      if (["77", "66", "55", "KJs", "QJs", "JTs", "T9s"].includes(s.hand) && !openBig) {
+      if (["77", "66", "55", "KJs", "QJs", "JTs", "T9s", "J9s", "98s"].includes(s.hand) && !openBig) {
         return ["CALL", `${s.hand} deep in position versus shorter opener has enough playability to call. Do not over-fold.`];
       }
     }
@@ -748,6 +758,11 @@ function legalActionFrequencies(s, best, opts) {
     out.JAM = danger ? 20 : 40;
   }
 
+  else if (!facingOpen && !facingLimp && p === "SB" && bb >= 18 && bb <= 24 && ["tight", "passive"].includes(s.table.BB?.type) && ["AJo", "AQo", "AKo", "ATs", "AJs", "AQs", "AKs", "KQo", "KJs", "KQs", "QJs", "JTs", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
+    out.OPEN = 75;
+    out.JAM = 25;
+  }
+
   else if (!facingOpen && !facingLimp && bb >= 16 && bb <= 22 && isLate(p) && ["55", "66", "77", "88", "A5s", "A4s", "KTs", "K9s", "QTs", "JTs", "T9s", "98s", "87s"].includes(hand)) {
     out.JAM = opts.tableType === "Loose/Gambly" ? 55 : opts.phase === "Day 1 Post-Reg" ? 78 : 70;
     out.OPEN = 100 - out.JAM;
@@ -767,6 +782,11 @@ function legalActionFrequencies(s, best, opts) {
   else if (facingOpen && bb >= 31 && bb <= 49 && villain && villain.bb <= 30 && ["99", "88", "AJs", "ATs", "KQs", "KJs", "QJs"].includes(hand) && ["CO", "BTN", "SB"].includes(s.villainPos || "")) {
     out["3-BET JAM"] = 65;
     out.FOLD = 35;
+  }
+
+  else if (facingOpen && bb >= 31 && bb <= 49 && villain && villain.bb <= 12 && posRank(p) > posRank(s.villainPos || "UTG") && ["77", "66", "55", "KJs", "QJs", "JTs", "T9s", "J9s", "98s"].includes(hand) && parseOpenSize(s.prior) < 3.0) {
+    out.CALL = 60;
+    out.FOLD = 40;
   }
 
   else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos || "") && bb >= 30 && bb <= 50 && ["AQs", "AJs", "KQs", "KJs", "QJs", "JTs", "QTs"].includes(hand)) {
@@ -822,9 +842,9 @@ function legalActionFrequencies(s, best, opts) {
     out.CALL = passiveVillain ? 70 : 60;
     if (out["3-BET JAM"] !== undefined && !passiveVillain) out["3-BET JAM"] = 20;
     out.FOLD = passiveVillain ? 30 : 20;
-  } else if (facingLimp && bb > 40 && isLate(p) && score >= 34) {
-    out.OPEN = 90;
-    if (out.CALL !== undefined) out.CALL = 10;
+  } else if (facingLimp && bb > 40 && (isLate(p) || ["MP", "LJ", "HJ"].includes(p)) && score >= 34) {
+    out.OPEN = ["MP", "LJ", "HJ"].includes(p) ? 80 : 90;
+    if (out.CALL !== undefined) out.CALL = 100 - out.OPEN;
   } else {
     out[best] = 100;
   }
