@@ -505,7 +505,7 @@ function solve(s, opts) {
     // In position, pairs/strong broadways are clear continues, often value 3-bets.
     // 31-45BB hero versus opens: strong hands should never fall through to default fold.
     // Versus deeper openers, prefer 3-bet/call mix. Versus shorter openers, more 3-bet jam pressure.
-    if (bb >= 31 && bb <= 45 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(s.hand)) {
+    if (bb >= 31 && bb <= 49 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(s.hand)) {
       if (villain && villain.bb <= 30) {
         return ["3-BET JAM", `${s.hand} versus a ${villain.bb}BB opener is a clear continue. At this effective depth, 3-bet jam maximizes value and denies equity.`];
       }
@@ -515,7 +515,7 @@ function solve(s, opts) {
       return ["3-BET", `${s.hand} at ${bb}BB versus an open is too strong to fold. 3-bet for value/protection.`];
     }
 
-    if (bb >= 31 && bb <= 45 && villain && villain.bb <= 30) {
+    if (bb >= 31 && bb <= 49 && villain && villain.bb <= 30) {
       if (["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(s.hand)) {
         return ["3-BET JAM", `${s.hand} versus a ${villain.bb}BB opener is a clear continue. At this effective depth, 3-bet jam maximizes value and denies equity.`];
       }
@@ -698,7 +698,7 @@ function legalActionFrequencies(s, best, opts) {
   } else if (!facingOpen && !facingLimp && bb >= 18 && bb <= 24 && ["AKs", "AKo", "AQs", "AQo", "QQ", "KK", "AA"].includes(hand)) {
     out.OPEN = 80;
     out.JAM = 20;
-  } else if (facingOpen && bb >= 31 && bb <= 45 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(hand)) {
+  } else if (facingOpen && bb >= 31 && bb <= 49 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(hand)) {
     if (villain && villain.bb <= 30) {
       out["3-BET JAM"] = 80;
       if (out["3-BET"] !== undefined) out["3-BET"] = 20;
@@ -708,7 +708,7 @@ function legalActionFrequencies(s, best, opts) {
     }
   }
 
-  else if (facingOpen && bb >= 31 && bb <= 45 && villain && villain.bb <= 30 && ["99", "88", "AJs", "ATs", "KQs", "KJs", "QJs"].includes(hand) && ["CO", "BTN", "SB"].includes(s.villainPos || "")) {
+  else if (facingOpen && bb >= 31 && bb <= 49 && villain && villain.bb <= 30 && ["99", "88", "AJs", "ATs", "KQs", "KJs", "QJs"].includes(hand) && ["CO", "BTN", "SB"].includes(s.villainPos || "")) {
     out["3-BET JAM"] = 65;
     out.FOLD = 35;
   }
