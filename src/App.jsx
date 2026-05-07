@@ -427,6 +427,23 @@ function solve(s, opts) {
     if (phase === "Day 2 Bounty" && villain && bb < villain.bb) adj += 4;
 
     if (bb <= 15) {
+      // Versus tiny-stack opens, live players often open too weak instead of jamming.
+      // Small pairs are not pure folds when we have reshove fold equity and cover/pressure villain.
+      if (
+        villain &&
+        villain.bb <= 10 &&
+        bb >= 10 &&
+        ["22", "33", "44", "55", "66"].includes(s.hand) &&
+        ["LJ", "HJ", "CO", "BTN", "SB"].includes(villainPos || "")
+      ) {
+        return ["3-BET JAM", `${s.hand} at ${bb}BB can reshove versus a ${villain.bb}BB ${villainPos} open. Live short-stack opens are often weaker/capped than they should be.`];
+      }
+
+      // BB versus SB is special even when short: heads-up, closing action, excellent price.
+      if (p === "BB" && villainPos === "SB" && openSize <= 2.5 && isSuited(s.hand) && score >= 38) {
+        return ["CALL", `BB versus SB: even at ${bb}BB, suited/playable hands can call small opens because you close the action.`];
+      }
+
       const threshold = (lateVillain ? 48 : 78) + adj;
       return score >= threshold
         ? ["3-BET JAM", `Short-stack resteal. No flatting at ${bb}BB.`]
@@ -619,7 +636,18 @@ function legalActionFrequencies(s, best, opts) {
   const passiveVillain = villain?.type === "passive";
   const heroIP = s.villainPos ? posRank(p) > posRank(s.villainPos) : false;
 
-  if (facingOpen && bb <= 30 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(hand)) {
+  if (facingOpen && p === "BB" && s.villainPos === "SB" && bb <= 15 && isSuited(hand) && score >= 38 && parseOpenSize(s.prior) <= 2.5) {
+    out.CALL = 65;
+    out["3-BET JAM"] = 25;
+    out.FOLD = 10;
+  }
+
+  else if (facingOpen && villain && villain.bb <= 10 && bb >= 10 && bb <= 15 && ["22", "33", "44", "55", "66"].includes(hand) && ["LJ", "HJ", "CO", "BTN", "SB"].includes(s.villainPos || "")) {
+    out["3-BET JAM"] = 45;
+    out.FOLD = 55;
+  }
+
+  else if (facingOpen && bb <= 30 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(hand)) {
     out["3-BET JAM"] = 100;
   } else if (facingLimp && bb <= 10 && ["A2o", "A3o", "A4o", "A5o", "A2s", "A3s", "A4s", "A5s", "A7s", "A8o", "A9o", "ATo"].includes(hand)) {
     out.JAM = 80;
