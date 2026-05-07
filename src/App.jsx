@@ -427,6 +427,20 @@ function solve(s, opts) {
     if (phase === "Day 2 Bounty" && villain && bb < villain.bb) adj += 4;
 
     if (bb <= 15) {
+      // Ultra-short correction: at 1-5BB versus an open, playable hands must go in.
+      // Folding too much here destroys stack utility because blinds/antes will end the tournament quickly.
+      if (bb <= 5) {
+        const ultraShortJamHands = [
+          "22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA",
+          "A2o", "A3o", "A4o", "A5o", "A7o", "A8o", "A9o", "ATo", "AJo", "AQo", "AKo",
+          "A2s", "A3s", "A4s", "A5s", "A7s", "ATs", "AJs", "AQs", "AKs",
+          "KTo", "KJo", "KQo", "KTs", "KJs", "KQs", "QTo", "QJo", "QTs", "QJs", "JTo", "JTs", "T9s", "98s", "87s"
+        ];
+        if (ultraShortJamHands.includes(s.hand)) {
+          return ["3-BET JAM", `${bb}BB versus an open: emergency stack. ${s.hand} has enough raw equity to go in rather than blind out.`];
+        }
+      }
+
       // Versus tiny-stack opens, live players often open too weak instead of jamming.
       // Small pairs are not pure folds when we have reshove fold equity and cover/pressure villain.
       if (
@@ -586,6 +600,25 @@ function solve(s, opts) {
     }
 
     const shortBehindCount = behind.filter((x) => x.bb <= 16).length;
+    const smallPair = ["22", "33", "44", "55", "66"].includes(s.hand);
+    const verySmallPair = ["22", "33", "44"].includes(s.hand);
+    const goodSmallPair = ["55", "66"].includes(s.hand);
+
+    // 11-15BB unopened pocket pairs: pairs realize all equity well as jams.
+    // Do not over-fold 55/66 from MP/LJ/HJ/CO/BTN just because stacks behind can call.
+    if (bb >= 11 && bb <= 15 && smallPair) {
+      if (goodSmallPair && !["UTG"].includes(p)) {
+        return ["JAM", `${bb}BB ${p} with ${s.hand}: pocket pair open-jam. You maximize fold equity and avoid raise/fold or blind-down problems.`];
+      }
+      if (verySmallPair && ["CO", "BTN", "SB"].includes(p)) {
+        return ["JAM", `${bb}BB ${p} with ${s.hand}: late-position pocket pair jam is profitable with dead blinds/ante.`];
+      }
+      if (verySmallPair && ["UTG", "UTG+1", "MP", "LJ"].includes(p) && (aggroBehind >= 2 || shortBehindCount >= 3)) {
+        return ["FOLD", `${bb}BB ${p} with ${s.hand}: close/mixed, but fold-biased with heavy call/reshove density behind.`];
+      }
+      return ["JAM", `${bb}BB ${p} with ${s.hand}: pocket pair jam is profitable enough at this stack depth.`];
+    }
+
     const weakEarlySuitedAce = ["A2s", "A3s", "A4s", "A5s"].includes(s.hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p);
     const weakEarlyOffsuitAce = ["A2o", "A3o", "A4o", "A5o", "A7o", "A8o", "A9o"].includes(s.hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p);
     const weakEarlyOffsuitBroadway = ["KTo", "QTo", "JTo", "KJo", "QJo"].includes(s.hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p);
@@ -646,7 +679,12 @@ function legalActionFrequencies(s, best, opts) {
   const passiveVillain = villain?.type === "passive";
   const heroIP = s.villainPos ? posRank(p) > posRank(s.villainPos) : false;
 
-  if (facingOpen && p === "BB" && s.villainPos === "SB" && bb <= 15 && isSuited(hand) && score >= 38 && parseOpenSize(s.prior) <= 2.5) {
+  if (facingOpen && bb <= 5 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA", "A2o", "A3o", "A4o", "A5o", "A7o", "A8o", "A9o", "ATo", "AJo", "AQo", "AKo", "A2s", "A3s", "A4s", "A5s", "A7s", "ATs", "AJs", "AQs", "AKs", "KTo", "KJo", "KQo", "KTs", "KJs", "KQs", "QTo", "QJo", "QTs", "QJs", "JTo", "JTs", "T9s", "98s", "87s"].includes(hand)) {
+    out["3-BET JAM"] = 95;
+    out.FOLD = 5;
+  }
+
+  else if (facingOpen && p === "BB" && s.villainPos === "SB" && bb <= 15 && isSuited(hand) && score >= 38 && parseOpenSize(s.prior) <= 2.5) {
     out.CALL = 65;
     out["3-BET JAM"] = 25;
     out.FOLD = 10;
@@ -666,6 +704,24 @@ function legalActionFrequencies(s, best, opts) {
 
   else if (!facingOpen && !facingLimp && bb <= 10 && ["22", "33", "44", "55", "66", "77", "88", "99", "TT", "JJ", "QQ", "KK", "AA"].includes(hand)) {
     out.JAM = 100;
+  }
+
+  else if (!facingOpen && !facingLimp && bb >= 11 && bb <= 15 && ["22", "33", "44", "55", "66"].includes(hand)) {
+    const behind = playersBehind(p).map((pos) => s.table[pos]).filter(Boolean);
+    const shortBehind = behind.filter((x) => x.bb <= 16).length;
+    const aggroBehind = behind.filter((x) => ["loose", "aggressive"].includes(x.type)).length;
+    const dangerous = shortBehind >= 3 || aggroBehind >= 2;
+
+    if (["55", "66"].includes(hand) && p !== "UTG") {
+      out.JAM = dangerous ? 75 : 90;
+      out.FOLD = 100 - out.JAM;
+    } else if (["22", "33", "44"].includes(hand) && ["CO", "BTN", "SB"].includes(p)) {
+      out.JAM = 80;
+      out.FOLD = 20;
+    } else {
+      out.FOLD = dangerous ? 65 : 45;
+      out.JAM = 100 - out.FOLD;
+    }
   } else if (facingLimp && bb >= 16 && bb <= 25 && (s.limpers?.length || 1) >= 2 && ["A2s", "A3s", "A4s", "A5s", "KTs", "QTs", "JTs", "T9s", "98s", "87s", "55"].includes(hand)) {
     out.JAM = opts.phase === "Day 1 Post-Reg" ? 80 : opts.tableType === "Loose/Gambly" ? 60 : 70;
     if (out.OPEN !== undefined) out.OPEN = 100 - out.JAM;
@@ -876,6 +932,17 @@ function runTests() {
   kk.villain = { pos: "UTG", bb: 9, chips: 27000, type: "tight", label: "Short" };
   kk.prior = "tight UTG (9BB) opens to 2.1x";
   assert("17BB KK versus open is 3-bet jam", solve(kk, { strategyMode: "Live Exploit", tableType: "Standard", phase: "Day 1 Post-Reg" })[0] === "3-BET JAM");
+
+  const ultra77 = generateScenario("Push/Fold", 112233);
+  ultra77.level = { level: 15, sb: 3000, bb: 6000, stage: "Push/Fold" };
+  ultra77.heroPos = "LJ";
+  ultra77.hand = "77";
+  ultra77.hero = { pos: "LJ", bb: 4, chips: 24000, type: "hero", label: "Short" };
+  ultra77.table.LJ = ultra77.hero;
+  ultra77.villainPos = "MP";
+  ultra77.villain = { pos: "MP", bb: 39, chips: 234000, type: "loose", label: "Big" };
+  ultra77.prior = "loose MP (39BB) opens to 2.5x";
+  assert("4BB 77 versus loose MP open is 3-bet jam", solve(ultra77, { strategyMode: "Live Exploit", tableType: "Standard", phase: "Day 1 Post-Reg" })[0] === "3-BET JAM");
 
   const limpAT = generateScenario("Push/Fold", 7777);
   limpAT.level = { level: 19, sb: 10000, bb: 15000, stage: "Push/Fold" };
