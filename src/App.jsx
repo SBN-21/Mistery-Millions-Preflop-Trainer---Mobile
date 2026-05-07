@@ -503,6 +503,18 @@ function solve(s, opts) {
       return ["CALL", `Deep BB suited broadway can flat versus passive late min-open.`];
     }
 
+    // BB versus late opens at 30-50BB: strong suited broadways are not pure 3-bets.
+    // They realize equity well as calls and can mix 3-bets versus wide/aggressive opens.
+    if (
+      p === "BB" &&
+      lateVillain &&
+      bb >= 30 &&
+      bb <= 50 &&
+      ["AQs", "AJs", "KQs", "KJs", "QJs", "JTs", "QTs"].includes(s.hand)
+    ) {
+      return ["CALL", `${s.hand} in the BB versus a late-position open is a clear continue, but not a pure 3-bet. Mix call and 3-bet; default call keeps dominated hands in and controls pot OOP.`];
+    }
+
     if (score >= 85 + adj) return ["3-BET", `Value 3-bet.`];
 
     if (p === "BTN" && ["UTG", "UTG+1", "MP"].includes(villainPos || "") && bb >= 30 && bb <= 50 && ["KTs", "KJs", "QJs", "JTs", "QTs"].includes(s.hand)) {
@@ -613,7 +625,13 @@ function legalActionFrequencies(s, best, opts) {
   } else if (!facingOpen && !facingLimp && bb >= 18 && bb <= 24 && ["AKs", "AKo", "AQs", "AQo", "QQ", "KK", "AA"].includes(hand)) {
     out.OPEN = 80;
     out.JAM = 20;
-  } else if (facingOpen && bb >= 50 && heroIP && villain && villain.bb <= 35 && ["JJ", "TT", "99", "88", "AKs", "AKo", "AQs", "AQo", "AJs", "KQs"].includes(hand)) {
+  } else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos || "") && bb >= 30 && bb <= 50 && ["AQs", "AJs", "KQs", "KJs", "QJs", "JTs", "QTs"].includes(hand)) {
+    const wideAggro = ["loose", "aggressive"].includes(villain.type);
+    out.CALL = wideAggro ? 55 : 65;
+    if (out["3-BET"] !== undefined) out["3-BET"] = wideAggro ? 45 : 35;
+  }
+
+  else if (facingOpen && bb >= 50 && heroIP && villain && villain.bb <= 35 && ["JJ", "TT", "99", "88", "AKs", "AKo", "AQs", "AQo", "AJs", "KQs"].includes(hand)) {
     out["3-BET"] = 70;
     if (out.CALL !== undefined) out.CALL = 30;
   }
