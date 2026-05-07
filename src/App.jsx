@@ -486,6 +486,20 @@ function solve(s, opts) {
 
     // Deep hero versus shorter opener: do not accidentally fold strong hands just because villain is 15-30BB.
     // In position, pairs/strong broadways are clear continues, often value 3-bets.
+    // 31-45BB hero versus shorter opener: effective stack is often 20-30BB.
+    // Strong hands should continue; many prefer 3-bet jam/value pressure rather than folding.
+    if (bb >= 31 && bb <= 45 && villain && villain.bb <= 30) {
+      if (["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(s.hand)) {
+        return ["3-BET JAM", `${s.hand} versus a ${villain.bb}BB opener is a clear continue. At this effective depth, 3-bet jam maximizes value and denies equity.`];
+      }
+      if (lateVillain && ["99", "88", "AJs", "ATs", "KQs", "KJs", "QJs"].includes(s.hand)) {
+        return ["3-BET JAM", `${s.hand} is a good pressure/value reshove versus a shorter late-position opener.`];
+      }
+      if (posRank(p) > posRank(villainPos || "UTG") && !openBig && ["77", "66", "55", "JTs", "T9s", "98s"].includes(s.hand)) {
+        return ["CALL", `${s.hand} can continue in position versus a smaller open when not facing oversized pressure.`];
+      }
+    }
+
     if (bb >= 50 && posRank(p) > posRank(villainPos || "UTG") && villain && villain.bb <= 35) {
       if (["JJ", "TT", "99", "88", "AKs", "AKo", "AQs", "AQo", "AJs", "KQs"].includes(s.hand)) {
         return ["3-BET", `${s.hand} deep in position versus a ${villain.bb}BB ${villainPos} open is a clear continue. Prefer 3-bet for value/protection; calling is also acceptable sometimes.`];
@@ -519,6 +533,10 @@ function solve(s, opts) {
 
     if (p === "BTN" && ["UTG", "UTG+1", "MP"].includes(villainPos || "") && bb >= 30 && bb <= 50 && ["KTs", "KJs", "QJs", "JTs", "QTs"].includes(s.hand)) {
       return ["FOLD", `${s.hand} on BTN versus ${villainPos} open is close/mixed. Default fold versus aggressive/strong early range, but calling some frequency is acceptable if blinds are passive and opener is weak.`];
+    }
+
+    if (p === "BB" && lateVillain && bb >= 25 && openSize <= 2.5 && ["KQo", "KJo", "QJo", "JTo", "KTo", "QTo"].includes(s.hand)) {
+      return ["CALL", `${s.hand} is a playable BB defend versus a late-position small open. Offsuit broadways defend less often than suited hands, but are not pure folds.`];
     }
 
     if (p === "BB" && lateVillain && score >= 30 + adj) return ["CALL", `BB defend versus late open.`];
@@ -625,7 +643,17 @@ function legalActionFrequencies(s, best, opts) {
   } else if (!facingOpen && !facingLimp && bb >= 18 && bb <= 24 && ["AKs", "AKo", "AQs", "AQo", "QQ", "KK", "AA"].includes(hand)) {
     out.OPEN = 80;
     out.JAM = 20;
-  } else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos || "") && bb >= 30 && bb <= 50 && ["AQs", "AJs", "KQs", "KJs", "QJs", "JTs", "QTs"].includes(hand)) {
+  } else if (facingOpen && bb >= 31 && bb <= 45 && villain && villain.bb <= 30 && ["AA", "KK", "QQ", "JJ", "TT", "AKs", "AKo", "AQs", "AQo"].includes(hand)) {
+    out["3-BET JAM"] = 80;
+    if (out["3-BET"] !== undefined) out["3-BET"] = 20;
+  }
+
+  else if (facingOpen && bb >= 31 && bb <= 45 && villain && villain.bb <= 30 && ["99", "88", "AJs", "ATs", "KQs", "KJs", "QJs"].includes(hand) && ["CO", "BTN", "SB"].includes(s.villainPos || "")) {
+    out["3-BET JAM"] = 65;
+    out.FOLD = 35;
+  }
+
+  else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos || "") && bb >= 30 && bb <= 50 && ["AQs", "AJs", "KQs", "KJs", "QJs", "JTs", "QTs"].includes(hand)) {
     const wideAggro = ["loose", "aggressive"].includes(villain.type);
     out.CALL = wideAggro ? 55 : 65;
     if (out["3-BET"] !== undefined) out["3-BET"] = wideAggro ? 45 : 35;
@@ -662,7 +690,12 @@ function legalActionFrequencies(s, best, opts) {
   else if (facingOpen && bb >= 50 && heroIP && passiveVillain && openTiny && ["AQo", "AJs", "KQs", "KJs", "QJs", "JTs"].includes(hand)) {
     out.CALL = hand === "AQo" ? 70 : 80;
     out["3-BET"] = hand === "AQo" ? 30 : 20;
-  } else if (facingOpen && p === "BB" && s.villainPos === "SB" && bb >= 12 && bb <= 30 && isSuited(hand) && score >= 40 && parseOpenSize(s.prior) <= 2.5) {
+  } else if (facingOpen && p === "BB" && villain && ["CO", "BTN", "SB"].includes(s.villainPos || "") && bb >= 25 && parseOpenSize(s.prior) <= 2.5 && ["KQo", "KJo", "QJo", "JTo", "KTo", "QTo"].includes(hand)) {
+    out.CALL = 55;
+    out.FOLD = 45;
+  }
+
+  else if (facingOpen && p === "BB" && s.villainPos === "SB" && bb >= 12 && bb <= 30 && isSuited(hand) && score >= 40 && parseOpenSize(s.prior) <= 2.5) {
     out.CALL = 75;
     out["3-BET JAM"] = 15;
     out.FOLD = 10;
@@ -793,6 +826,39 @@ function runTests() {
   limpAT.limpers = ["UTG"];
   limpAT.prior = "UTG limps; action on you";
   assert("17BB ATo over UTG limp is jam", solve(limpAT, { strategyMode: "Live Exploit", tableType: "Standard", phase: "Day 1 Post-Reg" })[0] === "JAM");
+
+  const midTT = generateScenario("Critical", 67891);
+  midTT.level = { level: 12, sb: 1500, bb: 3000, stage: "Critical" };
+  midTT.heroPos = "CO";
+  midTT.hand = "TT";
+  midTT.hero = { pos: "CO", bb: 36, chips: 108000, type: "hero", label: "Big" };
+  midTT.table.CO = midTT.hero;
+  midTT.villainPos = "MP";
+  midTT.villain = { pos: "MP", bb: 25, chips: 75000, type: "passive", label: "Average" };
+  midTT.prior = "passive MP (25BB) opens to 3.0x";
+  assert("36BB CO TT versus 25BB opener never folds", solve(midTT, { strategyMode: "Live Exploit", tableType: "Standard", phase: "Day 1 Rebuy" })[0] !== "FOLD");
+
+  const bbKQs = generateScenario("Early", 24680);
+  bbKQs.level = { level: 2, sb: 200, bb: 300, stage: "Early" };
+  bbKQs.heroPos = "BB";
+  bbKQs.hand = "KQs";
+  bbKQs.hero = { pos: "BB", bb: 36, chips: 10800, type: "hero", label: "Big" };
+  bbKQs.table.BB = bbKQs.hero;
+  bbKQs.villainPos = "BTN";
+  bbKQs.villain = { pos: "BTN", bb: 28, chips: 8400, type: "aggressive", label: "Average" };
+  bbKQs.prior = "aggressive BTN (28BB) opens to 2.7x";
+  assert("BB KQs 36BB vs aggressive BTN is mixed call/3bet not pure fold", ["CALL", "3-BET"].includes(solve(bbKQs, { strategyMode: "Live Exploit", tableType: "Standard", phase: "Day 1 Rebuy" })[0]));
+
+  const bbKQo = generateScenario("Early", 13579);
+  bbKQo.level = { level: 3, sb: 200, bb: 400, stage: "Early" };
+  bbKQo.heroPos = "BB";
+  bbKQo.hand = "KQo";
+  bbKQo.hero = { pos: "BB", bb: 30, chips: 12000, type: "hero", label: "Average" };
+  bbKQo.table.BB = bbKQo.hero;
+  bbKQo.villainPos = "BTN";
+  bbKQo.villain = { pos: "BTN", bb: 40, chips: 16000, type: "unknown", label: "Big" };
+  bbKQo.prior = "unknown BTN (40BB) opens to 2.1x";
+  assert("BB KQo versus small BTN open can defend", solve(bbKQo, { strategyMode: "Live Exploit", tableType: "Standard", phase: "Day 1 Rebuy" })[0] === "CALL");
 
   return tests;
 }
