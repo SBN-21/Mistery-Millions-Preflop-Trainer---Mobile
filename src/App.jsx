@@ -560,11 +560,19 @@ function solve(s, opts) {
 
     const shortBehindCount = behind.filter((x) => x.bb <= 16).length;
     const weakEarlySuitedAce = ["A2s", "A3s", "A4s", "A5s"].includes(s.hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p);
+    const weakEarlyOffsuitAce = ["A2o", "A3o", "A4o", "A5o", "A7o", "A8o", "A9o"].includes(s.hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p);
+    const weakEarlyOffsuitBroadway = ["KTo", "QTo", "JTo", "KJo", "QJo"].includes(s.hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p);
 
     // 11-15BB early/mid weak suited aces are not automatic jams when many stacks remain behind.
     // These hands have blocker value but perform poorly when called, so reshove/call density matters.
     if (bb >= 11 && bb <= 15 && weakEarlySuitedAce && (shortBehindCount >= 2 || aggroBehind >= 2)) {
       return ["FOLD", `${bb}BB ${p} with ${s.hand}: close/mixed, but default fold with multiple reshove/calling stacks behind.`];
+    }
+
+    // Offsuit weak Ax/broadways are worse than suited blockers from LJ or earlier.
+    // Without limpers/dead money, fold more when loose/aggressive stacks can call correctly.
+    if (bb >= 11 && bb <= 15 && (weakEarlyOffsuitAce || weakEarlyOffsuitBroadway) && (aggroBehind >= 2 || shortBehindCount >= 2)) {
+      return ["FOLD", `${bb}BB ${p} with ${s.hand}: fold-biased. Offsuit blocker hands perform poorly when called and lose fold equity with aggressive/short stacks behind.`];
     }
 
     const threshold = isEarly(p) ? 56 : p === "LJ" || p === "HJ" ? 46 : p === "CO" ? 32 : p === "BTN" ? 26 : 22;
@@ -635,6 +643,15 @@ function legalActionFrequencies(s, best, opts) {
     const danger = shortBehind >= 2 || aggroBehind >= 2;
     out.FOLD = danger ? 70 : 45;
     out.JAM = danger ? 30 : 55;
+  }
+
+  else if (!facingOpen && !facingLimp && bb >= 11 && bb <= 15 && ["A2o", "A3o", "A4o", "A5o", "A7o", "A8o", "A9o", "KTo", "QTo", "JTo", "KJo", "QJo"].includes(hand) && ["UTG", "UTG+1", "MP", "LJ"].includes(p)) {
+    const behind = playersBehind(p).map((pos) => s.table[pos]).filter(Boolean);
+    const shortBehind = behind.filter((x) => x.bb <= 16).length;
+    const aggroBehind = behind.filter((x) => ["loose", "aggressive"].includes(x.type)).length;
+    const danger = shortBehind >= 2 || aggroBehind >= 2;
+    out.FOLD = danger ? 80 : 60;
+    out.JAM = danger ? 20 : 40;
   }
 
   else if (!facingOpen && !facingLimp && bb >= 16 && bb <= 22 && isLate(p) && ["55", "66", "77", "88", "A5s", "A4s", "KTs", "K9s", "QTs", "JTs", "T9s", "98s", "87s"].includes(hand)) {
